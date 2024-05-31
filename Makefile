@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -I.
+CFLAGS = -I. -O0
 LDFLAGS = -lprocps -lX11 -lXi
 OBJ = main.o map.o
 

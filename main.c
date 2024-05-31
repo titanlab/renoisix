@@ -402,6 +402,8 @@ static int watch_plugins(int pid)
         hashmap_free(plugins);
     }
 
+    XAutoRepeatOn(disp);
+
     XCloseDisplay(disp);
 
     return 0;
