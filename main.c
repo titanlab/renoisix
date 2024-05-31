@@ -68,7 +68,6 @@ static int handle_xerror(Display * disp, XErrorEvent * xe)
         fprintf(stderr, "Warning: BadWindow occured - normally this should be uncritical.\n");
     } else {
         fprintf(stderr, "X11 Error: %d\n", xe->error_code);
-        stop = 1;
     }
     return 0;
 }
@@ -185,8 +184,6 @@ static int register_new_plugins(int pid, Display * disp)
             renoise_window = window;
             continue;
         }
-        if(!strcmp(wtitle, "Preferences"))
-            continue;
 
         if(!hashmap_get(plugins, (void *) &windows[i], sizeof(Window),
                 (uintptr_t *) &wdata)) {
@@ -194,18 +191,21 @@ static int register_new_plugins(int pid, Display * disp)
             Window root, parent, *children = NULL;
             unsigned int nchildren;
 
-            register_plugin(disp, window, wtitle);
-
             if(!XQueryTree(disp, window, &root, &parent, &children, &nchildren)) {
                 continue;
             }
 
-            if (children) {
-                for(j = 0; j < nchildren; j++) {
-                    register_plugin(disp, children[j], wtitle);
-                }
+            if(nchildren > 0) {
+                register_plugin(disp, window, wtitle);
+                XSetInputFocus(disp, window, RevertToParent, CurrentTime);
 
-                XFree((char *)children);
+                if (children) {
+                    for(j = 0; j < nchildren; j++) {
+                        register_plugin(disp, children[j], wtitle);
+                    }
+
+                    XFree((char *)children);
+                }
             }
         }
 
