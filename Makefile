@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -I. -O0
-LDFLAGS = -lprocps -lX11 -lXi
+LDFLAGS = -L. -lX11 -lXi
 OBJ = main.o map.o
 
 %.o: %.c

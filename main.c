@@ -5,8 +5,6 @@
 #include <signal.h>
 #include <unistd.h>
 
-#include <proc/readproc.h>
-
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
@@ -26,36 +24,6 @@ typedef struct watch_data
     Display * disp;
     Window window;
 } watch_data_t;
-
-static int get_renoise_pid()
-{
-    PROCTAB * ptp;
-    proc_t task;
-    int pid = -1;
-
-    ptp = openproc(PROC_FILLCOM | PROC_FILLSTAT);
-    memset(&task, 0, sizeof (task));
-	while(readproc(ptp, &task)) {
-        char * pname;
-
-        if(!task.cmdline)
-            continue;
-
-        pname = *task.cmdline;
-        if(!pname)
-            continue;
-
-        pname = basename(pname);
-        if(!strcmp(pname, "renoise")) {
-            pid = task.XXXID;
-            break;
-        }
-    }
-
-    closeproc(ptp);
-
-    return pid;
-}
 
 static void stop_watching(int signum)
 {
@@ -93,6 +61,10 @@ static char * get_property (Display * disp , Window win, Atom xa_prop_type,
         fprintf(stderr, "Cannot get %s property.\n", prop_name);
         return NULL;
     }
+
+	if (ret_nitems == 0) {
+		return NULL;
+	}
 
     if (xa_ret_type != xa_prop_type) {
         fprintf(stderr, "Invalid type of %s property.\n", prop_name);
@@ -159,6 +131,7 @@ static int register_new_plugins(int pid, Display * disp)
     Window * windows;
     unsigned long nwindows;
     Window * opened;
+    Atom xa_wintype_normal = XInternAtom(disp, "_NET_WM_WINDOW_TYPE_NORMAL", True);
 
     if ((windows = get_windows(disp, &nwindows)) == NULL) {
         return 1;
@@ -167,6 +140,8 @@ static int register_new_plugins(int pid, Display * disp)
     for (i = 0; i < nwindows / sizeof(Window); i++) {
         unsigned long * wpid;
         char * wtitle;
+        XClassHint wclass;
+        Atom * wtype;
         watch_data_t * wdata;
         Window window = windows[i];
 
@@ -177,12 +152,29 @@ static int register_new_plugins(int pid, Display * disp)
 
         wtitle = (char *) get_property(disp, window, XA_STRING,
             "WM_NAME", NULL);
-        if(!wtitle)
+        if(!wtitle) {
+            XFree(wpid);
             continue;
+        }
+        
+        wtype = (Atom *) get_property(disp, window, XA_ATOM,
+            "_NET_WM_WINDOW_TYPE", NULL);
+        if(!wtype) {
+            XFree(wpid);
+            XFree(wtitle);
+            continue;
+        }
 
-        if(strstr(wtitle, "Renoise (") == wtitle) {
-            renoise_window = window;
-            continue;
+        XGetClassHint(disp, window, &wclass);
+
+        //printf("%d != %d %s %s\n", *wtype, xa_wintype_normal, wclass.res_name, wclass.res_class);
+
+        if(!strcmp(wclass.res_class, "Renoise") && *wtype == xa_wintype_normal) {
+            if(window != renoise_window) {
+                renoise_window = window;
+                printf("Renoise window detected: %d\n", wtitle);
+            }
+            goto cont;
         }
 
         if(!hashmap_get(plugins, (void *) &windows[i], sizeof(Window),
@@ -192,7 +184,7 @@ static int register_new_plugins(int pid, Display * disp)
             unsigned int nchildren;
 
             if(!XQueryTree(disp, window, &root, &parent, &children, &nchildren)) {
-                continue;
+                goto cont;
             }
 
             if(nchildren > 0) {
@@ -209,11 +201,13 @@ static int register_new_plugins(int pid, Display * disp)
             }
         }
 
-        free(wtitle);
-        free(wpid);
+cont:
+        XFree(wtype);
+        XFree(wtitle);
+        XFree(wpid);
     }
 
-    free(windows);
+    XFree(windows);
 
     return 0;
 }
@@ -411,13 +405,13 @@ static int watch_plugins(int pid)
 
 int main(int argc, char * argv[])
 {
-    int pid = get_renoise_pid();
-    if(pid < 0) {
-        fprintf(stderr, "Please run renoise!\n");
-        return 1;
-    }
+	if(argc < 2) {
+		fprintf(stderr, "usage: renoisix [renoise-pid]\n");
+		return 1;
+	}
 
-    fprintf(stdout, "Found Renoise process: %d\n", pid);
+    int pid = atoi(argv[1]);
+    fprintf(stdout, "Watching Renoise process: %d\n", pid);
 
     return watch_plugins(pid);
 }
